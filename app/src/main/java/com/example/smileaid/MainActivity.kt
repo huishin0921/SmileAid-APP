@@ -3,6 +3,7 @@ package com.example.smileaid
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,7 +38,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
-import androidx.compose.runtime.snapshots.SnapshotStateList
 
 // ───────────── 資料 ─────────────
 data class AacCard(val emoji: String, val label: String, val speech: String, val color: Color)
@@ -88,15 +89,40 @@ enum class Screen { Home, Voice, Tasks, TaskRun, Smile, Caregiver }
 // ───────────── Activity ─────────────
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var tts: TextToSpeech
+    private var ttsReady = false
+    private var pending: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
-        setContent { MaterialTheme { SmileAidApp { tts.speak(it, TextToSpeech.QUEUE_FLUSH, null, "smile") } } }
+        setContent { MaterialTheme { SmileAidApp { speakText(it) } } }
     }
+
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) tts.language = Locale.TAIWAN
+        if (status != TextToSpeech.SUCCESS) {
+            Toast.makeText(this, "語音引擎初始化失敗，請確認手機已安裝文字轉語音引擎", Toast.LENGTH_LONG).show()
+            return
+        }
+        var r = tts.setLanguage(Locale.TAIWAN)
+        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+            r = tts.setLanguage(Locale.CHINESE)
+        }
+        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+            Toast.makeText(this, "找不到中文語音，請安裝中文語音資料", Toast.LENGTH_LONG).show()
+            try { startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) } catch (_: Exception) {}
+            return
+        }
+        tts.setSpeechRate(0.9f)
+        ttsReady = true
+        pending?.let { speakText(it) }; pending = null
     }
-    override fun onDestroy() { tts.shutdown(); super.onDestroy() }
+
+    private fun speakText(text: String) {
+        if (!ttsReady) { pending = text; return }
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "smile")
+    }
+
+    override fun onDestroy() { tts.stop(); tts.shutdown(); super.onDestroy() }
 }
 
 // ───────────── 導覽 ─────────────
